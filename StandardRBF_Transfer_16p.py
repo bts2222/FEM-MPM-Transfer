@@ -262,10 +262,13 @@ for a in range(0,len(ts)):
         data[p,29] = int(1) #status = 1
         data[p,30] = int(18446744073709551615) #cell id = 18446744073709551615
         data[p,31] = int(Gnew[p,17]) #material id
-        #nstatevectors = 0
-        #svars_0-5 (33,34,35,36,37,38) left as zero
-        data[p,39] = Gnew[p,13] #svars_6, pdstrain
-        #svars_6-19 (39-52) left as zero
+        data[p,32] = 0 #nstatevariables
+        #currently, this script is NOT configures to transfer deviatoric strain
+        #if that is desired, change nstatevariables to the number of state variables for the constitutive models
+            #in  MPM phase and configure appropriate number to be transferred here
+        #svars_0-5 (33,34,35,36,37,38) not configured
+        #data[p,39] = Gnew[p,13] #svars_6, pdstrain
+        #svars_6-19 (39-52) not configured
         ##input array into data frame
     frame = pd.DataFrame(data, columns=['id','mass','volume','pressure','coord_x','coord_y','coord_z',
                                     'displacement_x','displacement_y','displacement_z','nsize_x',
