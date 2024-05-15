@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.interpolate import Rbf
+import math as math
 
 #Timestep to transfer from (0 = gravity, 1 = first dynamic step (after one timestep), 2 = second  dynamic step, etc)
 #ts = [30,40,43,44,45,46,47,48,49,50,51,52,53,54,60,69] #PGA 0.4
@@ -8,16 +9,16 @@ from scipy.interpolate import Rbf
 #ts = [50,51,52,53,54,55,56,57] #PGA 0.3 early
 #ts = [60,70,80,90,100,110,120,130] #PGA 0.2
 #ts = [46,47,48,49]
-ts = [80]
+ts = [100]
 
 #Materials
 mtags = [167,168,170]
 rhos = [1690,1870,1900]
 #Bottom left node - for removing base displacement
-blnode = 176 #node number, not row
+blnode = 175 #node number, not row #175 up UP1, 176 for UP2
 #Truncation Limits
-#tx = [-340,87.5] #upstream
-tx = [-340,140] #downstream
+tx = [-340,87.5] #upstream
+#tx = [-340,140] #downstream
 ty = [-5,100]
 #Liquefaction Geometry PGA 0.4
 # Lx1 = [0,-31.2,-31.2,-31.2,-31,-31,-31,-61,-61,-61,-61,-61,-61,-61,-31.3,-31.1]
@@ -45,18 +46,19 @@ ty = [-5,100]
 # Lx2 = [1,-7.5,8.13,-0.2,-14.3,-1.8,-25.5,-14.4]
 # Ly2 = [24,13.1,9.63,6.5,6.9,4.6,6.9,4.6]
 
-Lx1 = [-1.3]
-Ly1 = [3.3]
-Lx2 = [9.5]
-Ly2 = [6.1]
+Lx1 = [-30.9]
+Ly1 = [15.9]
+Lx2 = [9.3]
+Ly2 = [6.4]
 
 #MPM MC Properties
 #[sat emb,dry emb,unL tail,L tail 7,found,L tail 6,L tail 5,L tail 4,L tail 3,L tail 2,L tail 1]
 mpmtags = [166,167,168,169,170,171,172,173,174,175,176] #material tag
-mpmphi0 = [35,35,30,0,0,0,0,0,0,0,0] #peak friction angle
+mpmphi0 = [35,35,30,0,0,0,0,0,0,0,0] #peak friction angle (degrees)
 mpmphiR = [20,20,0,0,0,0,0,0,0,0,0] #residual friction angle
-mpmC0 = [20,20,1,12,0,11.5,10.6,9.1,7.4,5.6,3] #peak cohesion
+mpmC0 = [20,20,1,12,0,11.5,10.6,9.1,7.4,5.6,3] #peak cohesion (kPa)
 mpmCR = [1,1,5,6,0,5.75,5.3,4.55,3.7,2.8,1.5] #residual cohesion
+mpmeP = [.01,.01,0,0,0,0,0,0,0,0,0]
 mpmeR = [.05,.05,1,1,1,1,1,1,1,1,1] #residual strain
 
 def eVol(x1,y1,x2,y2,x3,y3,x4,y4):
@@ -288,33 +290,43 @@ for a in range(0,len(ts)):
             elif Gnew[p,15] < -300:
                 data[p,31] = int(169)
         elif (Gnew[p,17]==167 and Gnew[p,2]<(-0.303*Gnew[p,2]+18.427)):
-            data[p,31] = int(166)
+            data[p,31] = int(166) #separate embankment below water table
         else:
             data[p,31] = int(Gnew[p,17]) #original material id
         if Gnew[p,17] == 170: #170 (foundation) is LE so no state variables to transfer
             data[p,32] = 0
         else: #transfer of state variables for softening MC models
-            for m in range(0,len(mpmtags)): #identify material tag
+            for m in range(0,len(mpmtags)+1): #identify material tag
                 if data[p,31] == mpmtags[m]:
-                    if Gnew[p,13] < mpmeR[m]: #in process of softening
+                    if Gnew[p,13] < mpmeP[m]: #peak strength
                         data[p,32] = 7
-                        data[p,33] = mpmphiR[m]+(mpmphi0[m]-mpmphiR[m])*(mpmeR[m]-Gnew[p,13]) #svars_0, phi
+                        data[p,33] = math.tan(3.14159/180*(mpmphi0[m])) #svars_0, phi
                         data[p,34] = 0 #svars_1, dilation (0)
-                        data[p,35] = mpmCR[m]+(mpmC0[m]-mpmCR[m])*(mpmeR[m]-Gnew[p,13]) #svars_2, cohesion
+                        data[p,35] = mpmC0[m]*1000 #svars_2, cohesion
+                        data[p,36] = 0 #svars_3, epsilon (0)
+                        data[p,37] = 0 #svars_4, rho (0)
+                        data[p,38] = 0 #svars_5, theta (0)
+                        data[p,39] = Gnew[p,13] #svars_6, pdstrain
+                    elif Gnew[p,13] < mpmeR[m]: #in process of softening
+                        data[p,32] = 7
+                        data[p,33] = math.tan(3.14159/180*(mpmphiR[m]+(mpmphi0[m]-mpmphiR[m])*(mpmeR[m]-Gnew[p,13])/(mpmeR[m]-mpmeP[m]))) #svars_0, phi, convert to degrees
+                        data[p,34] = 0 #svars_1, dilation (0)
+                        data[p,35] = 1000*(mpmCR[m]+(mpmC0[m]-mpmCR[m])*(mpmeR[m]-Gnew[p,13])/(mpmeR[m]-mpmeP[m])) #svars_2, cohesion, convert to Pa
                         data[p,36] = 0 #svars_3, epsilon (0)
                         data[p,37] = 0 #svars_4, rho (0)
                         data[p,38] = 0 #svars_5, theta (0)
                         data[p,39] = Gnew[p,13] #svars_6, pdstrain
                     elif Gnew[p,13] >= mpmeR[m]: #or fully softened
                         data[p,32] = 7
-                        data[p,33] = mpmphiR[m] #svars_0, phi
+                        data[p,33] = math.tan(3.14159/180*(mpmphiR[m])) #svars_0, phi
                         data[p,34] = 0 #svars_1, dilation (0)
-                        data[p,35] = mpmCR[m] #svars_2, cohesion
+                        data[p,35] = 1000*mpmCR[m] #svars_2, cohesion
                         data[p,36] = 0 #svars_3, epsilon (0)
                         data[p,37] = 0 #svars_4, rho (0)
                         data[p,38] = 0 #svars_5, theta (0)
                         data[p,39] = Gnew[p,13] #svars_6, pdstrain
-                else:
+                    break
+                elif m ==len(mpmtags):
                     print('MPM material not found')
         #svars_7-19 (39-52) left as zero
         #NOTE: These state variables are recalculated every timestep in the MPM code, however deviatoric strain is only added.
